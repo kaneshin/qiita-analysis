@@ -17,6 +17,10 @@ _~/.giita_
 }
 ```
 
+### Why `~/.giita`?
+
+Compatible for [github.com/kaneshin/giita](https://github.com/kaneshin/giita).
+
 ## Usage
 
 ```
