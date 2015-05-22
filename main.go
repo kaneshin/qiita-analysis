@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -18,7 +19,11 @@ var (
 	programName = os.Args[0]
 	team        string
 	token       string
+)
+
+const (
 	conf        = ".giita"
+	waitSeconds = 1
 )
 
 func init() {
@@ -48,19 +53,118 @@ func init() {
 func main() {
 	page := 1
 	limit := 100
-	var users = make(map[string]int)
+	var users = make(map[string]map[string]interface{})
 	for {
-		fmt.Printf("Request: page %d, per_page %d\n", page, limit)
-		req := request.NewItemRequestWithPageAndLimit(team, page, limit)
+		req := request.NewUserRequestWithPageAndLimit(team, page, limit)
 		cli := client.NewClient(token)
 		body, err := cli.Dispatch(req)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			panic(err)
 		}
 		var data []map[string]interface{}
 		err = json.Unmarshal(body, &data)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			panic(err)
+		}
+		for _, user := range data {
+			if id, ok := user["id"].(string); ok {
+				info := make(map[string]interface{})
+				if val, ok := user["name"].(string); ok {
+					if len(val) > 0 {
+						info["name"] = val
+					} else {
+						info["name"] = id
+					}
+				} else {
+					info["name"] = id
+				}
+				if val, ok := user["profile_image_url"].(string); ok {
+					info["profile_image_url"] = val
+				} else {
+					info["profile_image_url"] = ""
+				}
+				if val, ok := user["items_count"].(float64); ok {
+					info["items_count"] = (int)(val)
+				} else {
+					info["items_count"] = 0
+				}
+				if val, ok := user["description"].(string); ok {
+					info["description"] = val
+				} else {
+					info["description"] = ""
+				}
+				info["team_items_count"] = 0
+				users[id] = info
+			}
+		}
+		if len(data) < limit {
+			break
+		}
+		page++
+		time.Sleep(waitSeconds * time.Second)
+	}
+	page = 1
+	for {
+		req := request.NewItemRequestWithPageAndLimit(team, page, limit)
+		cli := client.NewClient(token)
+		body, err := cli.Dispatch(req)
+		if err != nil {
+			panic(err)
+		}
+		var data []map[string]interface{}
+		err = json.Unmarshal(body, &data)
+		if err != nil {
+			panic(err)
+		}
+		for _, d := range data {
+			if user, ok := d["user"].(map[string]interface{}); ok {
+				if id, ok := user["id"].(string); ok {
+					if val, ok := users[id]["team_items_count"].(int); ok {
+						users[id]["team_items_count"] = val + 1
+					}
+				}
+			}
+		}
+		if len(data) < limit {
+			break
+		}
+		page++
+		time.Sleep(waitSeconds * time.Second)
+	}
+	var formatString = func(v map[string]interface{}, name string) string {
+		if val, ok := v[name].(string); ok {
+			return strings.Replace(val, "\n", " ", -1)
+		}
+		return ""
+	}
+	fmt.Println("| User Image | Name | Description | Qiita:Team posts | Qiita posts |")
+	fmt.Println("| :--------: | :--- | :---------- | :--------------- | :---------- |")
+	for id, val := range users {
+		imgURL := formatString(val, "profile_image_url")
+		name := formatString(val, "name")
+		desc := formatString(val, "description")
+		titems := val["team_items_count"].(int)
+		items := val["items_count"].(int)
+		fmt.Printf(`| <img src="%s" height=60 /> | <a href="https://qiita.com/%s">%s</a> | %s | %d | %d |
+`, imgURL, id, name, desc, titems, items)
+	}
+}
+
+func simple() {
+	page := 1
+	limit := 100
+	var users = make(map[string]int)
+	for {
+		req := request.NewItemRequestWithPageAndLimit(team, page, limit)
+		cli := client.NewClient(token)
+		body, err := cli.Dispatch(req)
+		if err != nil {
+			panic(err)
+		}
+		var data []map[string]interface{}
+		err = json.Unmarshal(body, &data)
+		if err != nil {
+			panic(err)
 		}
 		for _, d := range data {
 			if user, ok := d["user"].(map[string]interface{}); ok {
@@ -73,7 +177,7 @@ func main() {
 			break
 		}
 		page++
-		time.Sleep(10 * time.Second)
+		time.Sleep(waitSeconds * time.Second)
 	}
 	for id, val := range users {
 		fmt.Printf("%s, %d\n", id, val)
